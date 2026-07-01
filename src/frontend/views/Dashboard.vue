@@ -387,24 +387,15 @@ const queueLiveSamples = (serverId, samples, reportTs) => {
 }
 
 const queueLiveMessage = (msg) => {
-  if (!msg || (msg.type !== 'update' && msg.type !== 'batchUpdate')) return
+  if (!msg || msg.type !== 'batchUpdate') return
 
   const reportTs = normalizeMetricTimestamp(msg.ts, Date.now())
 
-  const updates = Array.isArray(msg.updates)
-    ? msg.updates
-    : (msg.serverId ? [{ serverId: msg.serverId, samples: msg.samples, data: msg.data, payload: msg.payload, ts: msg.ts }] : [])
+  const updates = Array.isArray(msg.updates) ? msg.updates : []
 
   for (const update of updates) {
     if (!update || !update.serverId) continue
-    const samples = Array.isArray(update.samples)
-      ? update.samples
-      : (update.payload || update.data
-          ? [{
-              ts: (update.data || update.payload).sample_timestamp || (update.data || update.payload).last_updated || (update.data || update.payload).timestamp || update.ts || msg.ts,
-              data: update.data || update.payload
-            }]
-          : [])
+    const samples = Array.isArray(update.samples) ? update.samples : []
 
     const liveSamples = []
     for (const sample of samples) {
@@ -592,9 +583,10 @@ const startLiveSocket = () => {
     return
   }
 
-  // 为每个 API base 创建独立的 WebSocket 连接，只传该 base 的 server IDs
+  // 为每个 API base 创建独立的 WebSocket 连接，跳过没有服务器的 base
   liveSockets = bases.map((_, index) => {
-    const ids = idsByIndex.get(index) || []
+    const ids = idsByIndex.get(index)
+    if (!ids || ids.length === 0) return null
     return createLiveSocket('all', {
       replay: false,
       onMessage: queueLiveMessage,
@@ -603,7 +595,7 @@ const startLiveSocket = () => {
         liveConnected.value = anyConnected
       }
     }, index, ids)
-  })
+  }).filter(Boolean)
 }
 
 const initMap = () => {
